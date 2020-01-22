@@ -48,55 +48,142 @@ types:
                 {
                   "Message": "Chat created! Bravo, Filip, vad ca stii cum sa te folosesti de un api a DOUA OARA DEJA! DAAAAAAAAAAAAAAAMN"
                 }
-  /{Id}/messages:
-    description: Message entity
-    get:
-      description: Get the messages for Chat with `Id = {Id}`
-      responses:
-        200:
-          body:
-            application/json:
-              example: |
-                  [
-                    {
-                     "chat": 1,
-                     "to_user": 1,
-                     "from_user": 10,
-                     "status": "not_read",
-                     "inclusion_date": 2018-01-01T09:00:00.0Z,
-                     "message": "Vadim, te iubesc!",
-                     "Id" : 2
-                    },
-                    {
-                     "chat": 1,
-                     "to_user": 10,
-                     "from_user": 1,
-                     "status": "not_read",
-                     "inclusion_date": 2018-01-01T09:00:00.0Z,
-                     "message": "Adrian, eu nu te iubesc!",
-                     "Id" : 1
-                    }              
-                  ]
-        404:
-          body:
-            application/json:
-              example: |
-                {"message": "Chat not found"}
-    post:
-        description: Add a message
-        body:
-          application/json:
-            example: |
-              {
-                 "to_user": 1,
-                 "from_user": 10,
-                 "message": "Vadim, te iubesc!"
-              }
+  /{Id}:
+    /file:
+      post:
+        description: upload file
+        queryParameters: 
+          from:
+            description: id of user which send file
+            type: integer
+            required: true
+          to:
+            description: user id which recieve file
+            type: integer
+            required: true
+        headers: 
+          hash:
+            description: SHA256 hash for file verification 
+            type: string
+            required: true
+        body: 
+          multipart/form-data:
+            properties:
+              file:
+                description: The file to be uploaded
+                required: true
+                type: file  
+        responses: 
+          200:
+            body:
+              application/json:
+                example: { "message" : "File was sent successfully"}
+    /messages:
+      description: Message entity
+      get:
+        description: Get the messages for Chat with `Id = {Id}`
         responses:
           200:
             body:
               application/json:
                 example: |
-                    {
-                      "Message": "Message sent!"
-                    }
+                    [
+                      {
+                       "chat": 1,
+                       "to_user": 1,
+                       "from_user": 10,
+                       "status": "not_read",
+                       "inclusion_date": 2018-01-01T09:00:00.0Z,
+                       "message": "Vadim, te iubesc!",
+                       "Id" : 2
+                      },
+                      {
+                       "chat": 1,
+                       "to_user": 10,
+                       "from_user": 1,
+                       "status": "not_read",
+                       "inclusion_date": 2018-01-01T09:00:00.0Z,
+                       "message": "Adrian, eu nu te iubesc!",
+                       "Id" : 1
+                      }              
+                    ]
+          404:
+            body:
+              application/json:
+                example: |
+                  {"message": "Chat not found"}
+      post:
+          description: Add a message
+          body:
+            application/json:
+              example: |
+                {
+                   "to_user": 1,
+                   "from_user": 10,
+                   "message": "Vadim, te iubesc!"
+                }
+          responses:
+            200:
+              body:
+                application/json:
+                  example: |
+                      {
+                        "Message": "Message sent!"
+                      }
+/files:
+  get:
+    description: get file by id
+    queryParameters: 
+      fileId:
+        type: integer
+        required: true
+    responses:
+      200:
+        headers: 
+          hash:
+            description: sha256 file has
+            type: string
+            required: true
+        body:
+          multipart/form-data:
+            example: 
+                {
+                  "parts": {
+                    "file": {
+                      "headers": {
+                        "Content-Disposition": {
+                          "name": "file (this is default)",
+                          "filename": " name of file",
+                          "subtype": "form-data (this is default) "
+                        },
+                        "Content-Type": "file content type",
+                        "Content-Transfer-Encoding": "binary (default)"
+                      },
+                      "content": "File Content in binary format"
+                          }
+                      }
+                }
+  /{userId}:
+    get:
+      description: Get list of all recieved and sent files of an user
+      responses:
+        200:
+          body: 
+            application/json: 
+              example: |
+               [
+                 {
+                 "id": 2 , 
+                 "name": "file name"
+                 "dataTime": "sent or recieved time"
+                 "size": "file size in Mb"
+                 },
+                {
+                "id": 3, 
+                "name": "picture.img"
+                "dataTime":  2018-01-01T09:00:00.0Z,
+                "size": 2.98
+                }
+               ]
+
+    

@@ -1,0 +1,53 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<types:mule xmlns:types="http://www.mulesoft.org/schema/mule/types">
+  <types:catalog>
+    <types:type name="message" format="json">
+      <types:shape format="weave" example="examples/chatMessages.json"><![CDATA[%dw 2.0
+
+type message = Array<{|  chat: Number {"typeId": "int"},   to_user: Number {"typeId": "int"},   from_user: Number {"typeId": "int"},   status: String,   inclusion_date: String,   message: String,   Id: Number {"typeId": "int"},   file_id: Number {"typeId": "int"}|}> {"example": "[{\\\"chat\\\":1,\\\"to_user\\\":1,\\\"from_user\\\":10,\\\"status\\\":\\\"not_read\\\",\\\"inclusion_date\\\":\\\"2018-01-01T09:00:00.0Z\\\",\\\"message\\\":\\\"Vadim, te iubesc!\\\",\\\"Id\\\":2},{\\\"chat\\\":1,\\\"to_user\\\":10,\\\"from_user\\\":1,\\\"status\\\":\\\"not_read\\\",\\\"inclusion_date\\\":\\\"2018-01-01T09:00:00.0Z\\\",\\\"message\\\":\\\"Adrian, eu nu te iubesc!\\\",\\\"Id\\\":1,\\\"file_id\\\":2}]"}
+
+]]></types:shape>
+    </types:type>
+    <types:type name="file" format="json">
+      <types:shape format="weave" example="examples/file.json"><![CDATA[%dw 2.0
+
+type file = {|
+  parts: {|
+    file: {|
+      headers: {|
+        "Content-Disposition": {|
+          name: String, 
+          filename: String, 
+          subtype: String
+        |}, 
+        "Content-Type": String, 
+        "Content-Transfer-Encoding": String
+      |}, 
+      content: {|  |}
+    |}
+  |}
+|} {"example": "{\\\"parts\\\":{\\\"file\\\":{\\\"headers\\\":{\\\"Content-Disposition\\\":{\\\"name\\\":\\\"file\\\",\\\"filename\\\":\\\"pom.xml\\\",\\\"subtype\\\":\\\"form-data\\\"},\\\"Content-Type\\\":\\\"application\\/xml\\\",\\\"Content-Transfer-Encoding\\\":\\\"binary\\\"},\\\"content\\\":{}}}}"}
+
+]]></types:shape>
+    </types:type>
+  </types:catalog>
+  <types:enrichment select="#9ff5900c-1c2e-44c5-91f9-0e6cc09112d0"/>
+  <types:enrichment select="#c3f2f1c1-865b-4c9c-8e8b-d70632528c31">
+    <types:processor-declaration>
+      <types:output-event>
+        <types:message>
+          <types:payload type="message"/>
+        </types:message>
+      </types:output-event>
+    </types:processor-declaration>
+  </types:enrichment>
+  <types:enrichment select="#5702562c-f979-4d20-83b4-ec76e67f0c19">
+    <types:processor-declaration>
+      <types:output-event>
+        <types:message>
+          <types:payload type="file"/>
+        </types:message>
+      </types:output-event>
+    </types:processor-declaration>
+  </types:enrichment>
+</types:mule>

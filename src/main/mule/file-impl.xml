@@ -1,0 +1,229 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:java="http://www.mulesoft.org/schema/mule/java"
+	xmlns:s3="http://www.mulesoft.org/schema/mule/s3" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/s3 http://www.mulesoft.org/schema/mule/s3/current/mule-s3.xsd
+http://www.mulesoft.org/schema/mule/java http://www.mulesoft.org/schema/mule/java/current/mule-java.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd">
+	<s3:config name="Amazon_S3_Configuration" doc:name="Amazon S3 Configuration" doc:id="cc755a74-6f91-440d-a92e-c3485cdfebe6" >
+		<s3:basic-connection accessKey="******" secretKey="****" region="EU_CENTRAL_1" />
+	</s3:config>
+	<flow name="file_uploadFile_Flow" doc:id="328f466f-1fc3-4784-9e2e-846dba49e5c5" >
+		<logger level="INFO" doc:name="Logger" doc:id="a1006c6e-52e5-47e0-8a4f-b2626f82f486" message='#["Request Content-Type: " ++ payload.^mimeType]'/>
+		<ee:transform doc:name="Transform Message" doc:id="b103e4cc-4c18-4ee3-a6fb-4de72c297307" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<set-variable value='#[output application/java --- write(payload.parts.file.content,"application/octet-stream")]' doc:name="Set content" doc:id="24a3b7a9-368e-42b2-b6f3-dcba6972ef27" variableName="content"/>
+		<flow-ref doc:name="file_getHash_subFlow" doc:id="a94ec592-1773-4514-9f83-a250fc303b5a" name="file_getHash_subFlow"/>
+		<logger level="INFO" doc:name="Logger" doc:id="de5cf07e-98bb-484c-a65f-872b2bf42699" message='#[{"File Hash": vars.hash, sizeMb: ((sizeOf(vars.content)/(1024 pow 2)) as String {format:".##"})}]'/>
+		<choice doc:name="Choice" doc:id="1c69a3a0-ce92-4b35-90a4-8ed28a3ec3c0" >
+			<when expression="#[vars.hash == attributes.headers.hash]">
+				<flow-ref doc:name="file_processData_Flow" doc:id="3292f9db-c123-428a-99b7-45047f53b898" name="file_processData_Flow"/>
+			</when>
+			<otherwise >
+				<raise-error doc:name="Raise error" doc:id="63783a17-0666-4cea-b4bc-e195aff66393" type="FILE1:DATA_CORRUPTED" description="File is corrupted"/>
+			</otherwise>
+		</choice>
+		<error-handler ref="file-implError_Handler"/>
+	</flow>
+	<sub-flow name="file_getHash_subFlow" doc:id="2e772943-33f1-4996-9f43-9ebe6e66dcee" >
+		<java:invoke-static doc:name="Invoke static" doc:id="32a5f445-f41c-4d86-a1b0-bc235b9cb4bc" class="com.file.Generator" method="generateSha256Hash(java.io.InputStream)" target="hash">
+			<java:args><![CDATA[#[{fileContent:vars.content}]]]></java:args>
+		</java:invoke-static>
+	</sub-flow>
+	<flow name="file_processData_Flow" doc:id="299f5236-e9b9-438d-b980-e39ab643e7a4" >
+		<ee:transform doc:name="Transform Message" doc:id="9ff5900c-1c2e-44c5-91f9-0e6cc09112d0">
+					<ee:message>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="fileDetails"><![CDATA[%dw 2.0
+output application/java
+---
+{
+	name: payload.parts.file.headers.'Content-Disposition'.filename,
+	hash: vars.hash,
+	time: now() as DateTime as Number {unit:"milliseconds"},
+	sizeMb: ((sizeOf(vars.content)/(1024 pow 2)) as String {format:".##"}),
+	userId: attributes.queryParams.'from',
+	toUser: attributes.queryParams.'to',
+	chatId: attributes.uriParams.Id
+}]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+		<logger level="INFO" doc:name="Logger" doc:id="8822355c-4019-4a7d-9d12-908e56b11b06" message="#[vars.fileDetails]"/>
+		<flow-ref doc:name="file_checkIfFileExistsInDb_SubFlow" doc:id="b153266d-b8da-4034-8e3b-81883bbc3136" name="file_checkIfFileExistsInDb_SubFlow"/>
+		<flow-ref doc:name="file_checkIfFileExistsInS3_SubFlow" doc:id="64770e70-979d-46ae-b7d4-1d442c533a37" name="file_checkIfFileExistsInS3_SubFlow"/>
+		<choice doc:name="Choice" doc:id="e93b8fba-79c8-4a4b-8bd8-bc98d1d2410f" >
+			<when expression="#[(vars.index.id != null) and (vars.isPresent == true)]">
+				<logger level="INFO" doc:name="Logger" doc:id="83cca5e8-d240-42f8-9cc5-a4de6c0f941c" message="Such file already exists. It will be reused " />
+			</when>
+			<otherwise>
+				<flow-ref doc:name="file_encrypt_subFlow" doc:id="4720055e-36c9-4d56-af95-58cae40226ca" name="file_encrypt_subFlow"/>
+				<s3:create-object doc:name="Create object" doc:id="c50e52a7-c446-4133-89fd-d7312245219a" config-ref="Amazon_S3_Configuration" key='#["Files/" ++ vars.fileDetails.time ++ "_" ++ vars.fileDetails.name]' bucketName="safenudes" contentType="#[payload.parts.file.headers.'Content-Type']" contentLength="#[sizeOf(vars.content)]">
+			<s3:object-content><![CDATA[#[vars.content]]]></s3:object-content>
+		</s3:create-object>
+				<flow-ref doc:name="file_storeFileInDb_Flow" doc:id="7be580ea-f67a-477d-92a6-15c40e60e0ff" name="file_storeFileInDb_Flow" />
+			</otherwise>
+		</choice>
+		<flow-ref doc:name="file_send_subFlow" doc:id="62154b41-051b-4262-af90-b35b3354124a" name="file_send_subFlow" />
+	</flow>
+	<sub-flow name="file_send_subFlow" doc:id="314a83e1-1ae5-43fe-bbee-8f024e45af9b" >
+		<db:insert doc:name="Insert " doc:id="aa632f39-b11c-4504-b180-aa6bbff0a9a0" config-ref="user_db_config" >
+			<db:sql >INSERT INTO `usersdb`.`messages`
+(`chat`, `to_user`, `from_user`, `status`, `inclusion_date`, `file_id`)
+VALUES
+(:chat, :to_user, :from_user, :status, :inclusion_date, :fileId);
+</db:sql>
+			<db:input-parameters ><![CDATA[#[{
+ "chat": vars.fileDetails.chatId,
+ "to_user": vars.fileDetails.toUser,
+ "from_user": vars.fileDetails.userId,
+ "status": "sent!",
+ "inclusion_date": now() as String {format: "yyyy-MM-dd HH:mm:ss"},
+ "fileId": vars.index.id
+}]]]></db:input-parameters>
+		</db:insert>
+		<set-payload value='#[output application/json --- {"message" : "File was sent successfully"}]' doc:name="Set Payload" doc:id="ca189f89-893c-408b-9f07-96b6c4cd1590" />
+	</sub-flow>
+	<flow name="file_storeFileInDb_Flow" doc:id="de53f4d1-69be-4995-add1-d481669efd58" >
+		<db:insert doc:name="Insert new file record" doc:id="b1583e11-626e-4cab-8bd1-de5a023d6cd1" config-ref="user_db_config">
+			<db:sql >insert into files (name,timestamp,hash,size_Mb,owner_id)values
+(:name,:time,:hash,:size,:userId);
+</db:sql>
+			<db:input-parameters ><![CDATA[#[{
+	name: vars.fileDetails.name,
+	time: vars.fileDetails.time,
+	hash: vars.fileDetails.hash,
+	userId: vars.fileDetails.userId,
+	size: vars.fileDetails.sizeMb
+}]]]></db:input-parameters>
+		</db:insert>
+		<flow-ref doc:name="file_checkIfFileExists_SubFlow" doc:id="16e12915-5c97-47a1-bb96-0ab333233214" name="file_checkIfFileExistsInDb_SubFlow"/>
+	</flow>
+	<sub-flow name="file_checkIfFileExistsInS3_SubFlow" doc:id="dbc442ae-e9d6-48f5-a0cf-a6872259faa4" >
+		<try doc:name="Try" doc:id="3286fb6e-e294-49f7-b938-6b1fd1860075">
+			<s3:get-object-metadata doc:name="Get object metadata" doc:id="90179c8e-79b4-4772-ab54-2adce4c1f2b7" config-ref="Amazon_S3_Configuration" bucketName="safenudes" key='#["Files/" ++ (vars.index.time default "notFound") ++ "_" ++ (vars.fileDetails.name default "notFound")]' target="isPresent" targetValue="#[true]" />
+			<error-handler>
+				<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="f6afd766-6314-4d14-ae86-c0ad52a47994">
+					<set-variable value="#[false]" doc:name="Set isPresent" doc:id="7a27e629-abc8-4bab-899f-c2ff93a5d9db" variableName="isPresent" />
+				</on-error-continue>
+			</error-handler>
+		</try>
+		<logger level="INFO" doc:name="Logger" doc:id="487e895f-a7b4-4352-bdc3-61e04f10940c" message='#[output application/json --- if (vars.isPresent == false) "Obj not found in s3" else " Obj exist in s3"]' />
+	</sub-flow>
+	<sub-flow name="file_checkIfFileExistsInDb_SubFlow" doc:id="90096727-c857-42f1-b721-5cd586e4e96e" >
+		<db:select doc:name="Select id of last inserted row" doc:id="77b4d775-5b34-447d-bd66-b3f438dd6671" config-ref="user_db_config" target="index" targetValue="#[payload[0]]">
+			<db:sql>SELECT  id, timestamp as time from files
+where name = :name and hash = :hash and owner_id = :userId
+ORDER BY id DESC LIMIT 1</db:sql>
+			<db:input-parameters><![CDATA[#[{
+	name: vars.fileDetails.name,
+	time: vars.fileDetails.time,
+	hash: vars.fileDetails.hash,
+	userId: vars.fileDetails.userId
+}]]]></db:input-parameters>
+		</db:select>
+		<logger level="INFO" doc:name="Logger" doc:id="59106a36-f727-4463-9b84-ee752fc6836b" message='#["File Id: " ++ (vars.index.id default " Not found")]' />
+	</sub-flow>
+	<sub-flow name="file_encrypt_subFlow" doc:id="482c8f6c-2ace-4310-9548-8bb731e0b909" >
+		<java:invoke-static doc:name="Invoke static" doc:id="f25c8bdc-168d-4641-bc9a-b408c262ec01" class="com.file.Encryption" method="encryptFile(java.io.InputStream,java.lang.String)" target="content">
+			<java:args ><![CDATA[#[{
+	initialContent: vars.content,
+	aesKey: "myAesKey"
+}]]]></java:args>
+		</java:invoke-static>
+	</sub-flow>
+	<flow name="file_getFile_Flow" doc:id="0cc6db79-a036-4b0d-b56c-69aa10e44449" >
+		<db:select doc:name="Select file by id" doc:id="3c3da849-09c0-4038-8251-b38cda9d235a" config-ref="user_db_config" target="file" targetValue="#[payload[0]]">
+			<db:sql >select * from files
+where id = :id</db:sql>
+			<db:input-parameters ><![CDATA[#[{id: attributes.queryParams.fileId}]]]></db:input-parameters>
+		</db:select>
+		<logger level="INFO" doc:name="Logger" doc:id="39632fea-0da0-4916-be02-583877de4f4c" message='#["Files/" ++ vars.file.timestamp ++ "_" ++ vars.file.name]'/>
+		<s3:get-object doc:name="Get object" doc:id="5c2bf106-68f3-4206-865f-da794ed58e1d" config-ref="Amazon_S3_Configuration" bucketName="safenudes" key='#["Files/" ++ vars.file.timestamp ++ "_" ++ vars.file.name]'/>
+		<logger level="INFO" doc:name="Copy_of_Logger" doc:id="913dd216-871b-4712-be08-44b455333b95" message='#[output application/json --- ((sizeOf(payload)/(1024 pow 2)) as String {format:".##"})]' />
+		<set-variable value="#[attributes.contentType]" doc:name="Set Variable" doc:id="13427d20-c333-446d-9221-cbdcaa725a89" variableName="contentType"/>
+		<set-variable value='#[output application/java --- write(payload,"application/octet-stream")]' doc:name="Set content" doc:id="281bf3df-ad8e-4099-836a-66564478b4b8" variableName="content" />
+		<flow-ref doc:name="file_decrypt_subFlow" doc:id="54cede23-eef0-42b0-ac40-7c4c210ece6a" name="file_decrypt_subFlow"/>
+		<flow-ref doc:name="file_getHash_subFlow" doc:id="f4e80671-935b-4d0b-945d-e64d652ead46" name="file_getHash_subFlow"/>
+		<logger level="INFO" doc:name="Logger" doc:id="aebd4c64-effe-44d8-8e33-9fa98107882f" message="#[vars.hash]"/>
+		<logger level="INFO" doc:name="Logger" doc:id="eaf5af43-244b-458c-8388-353448ea40a4" message='#[output application/json --- ((sizeOf(payload)/(1024 pow 2)) as String {format:".##"})]' />
+		<ee:transform doc:name="Transform Message" doc:id="5702562c-f979-4d20-83b4-ec76e67f0c19" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output multipart/form-data
+---
+{ 
+  "parts": {
+    "file": {
+      "headers": {
+        "Content-Disposition": {
+          "name": "file",
+          "filename": vars.file.name,
+          "subtype": "form-data"
+        },
+        "Content-Type": vars.contentType,
+        "Content-Transfer-Encoding": "binary"
+      },
+      "content": vars.content
+          }
+        }
+      }]]></ee:set-payload>
+				<ee:set-attributes ><![CDATA[%dw 2.0
+output application/java
+---
+{
+	hash: vars.hash
+}]]></ee:set-attributes>
+			</ee:message>
+		</ee:transform>
+	</flow>
+	<sub-flow name="file_decrypt_subFlow" doc:id="5ec88e22-23d7-4f98-a343-b53b7804a864" >
+		<java:invoke-static doc:name="Invoke static" doc:id="99689d66-e189-4c69-b49d-76d4e4cf2fe4" class="com.file.Encryption" method="decryptFile(java.io.InputStream,java.lang.String)" target="content">
+			<java:args><![CDATA[#[{content:vars.content,
+	aesKey: "myAesKey"
+}]]]></java:args>
+		</java:invoke-static>
+	</sub-flow>
+	<flow name="file-getAllUserFiles_Flow" doc:id="499b4a75-8a73-4e16-a214-a6864fc46c52" >
+		<db:select doc:name="Select all user files" doc:id="bc7c5621-2687-4563-9f06-60ea157a608c" config-ref="user_db_config">
+			<db:sql >select f.id,f.name,f.size_Mb, ms.inclusion_date as date
+ from files as f
+inner join (SELECT tt.file_id, tt.inclusion_date from messages as tt
+inner join (select file_id, max(inclusion_date) AS MaxDateTime from messages
+group by file_id ) groupedtt
+on tt.file_id = groupedtt.file_id
+and tt.inclusion_date = groupedtt.MaxDateTime
+where to_user = :userId or from_user = :userId) ms
+on f.id = ms.file_id</db:sql>
+			<db:input-parameters ><![CDATA[#[{userId: attributes.uriParams.userId}]]]></db:input-parameters>
+		</db:select>
+		<ee:transform doc:name="Transform Message" doc:id="cb607fa7-7b09-4f57-9db1-3aa1e5adbddc" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+	<error-handler name="file-implError_Handler" doc:id="876459b3-9999-4479-bd06-56806be869f5" >
+		<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="5b265e86-aeca-4897-9650-d68676be1104" type="FILE1:DATA_CORRUPTED">
+			<logger level="INFO" doc:name="Logger" doc:id="af0401a0-376e-4599-9843-7c7ebae01049" message="#[error.description]" />
+			<set-variable value="400" doc:name="Set httpStatus" doc:id="70a1255a-1172-43ff-89ae-452e23767ac5" variableName="httpStatus"/>
+			<set-payload value='#[output application/json --- {message: (error.description default "Something went Wrong")}]' doc:name="Set Payload" doc:id="b329f974-03f4-4d67-b8ab-eb143173c4d9" />
+		</on-error-continue>
+		<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="7dcbfdd5-7093-49aa-a0c6-8b7f1320cf06" >
+			<logger level="INFO" doc:name="Logger" doc:id="a2ae0120-2fc6-4d2a-943c-4c3cf6891f67" message="#[error.description]" />
+			<set-payload value="#[output application/json --- payload]" doc:name="Set Payload" doc:id="103ae4e1-c3d0-40c3-99ea-24150430b488" />
+		</on-error-propagate>
+	</error-handler>
+</mule>

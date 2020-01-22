@@ -1,0 +1,21 @@
+ [
+	{
+		"chat": 1,
+		"to_user": 1,
+		"from_user": 10,
+		"status": "not_read",
+		"inclusion_date": "2018-01-01T09:00:00.0Z",
+		"message": "Vadim, te iubesc!",
+		"Id": 2
+	},
+	{
+		"chat": 1,
+		"to_user": 10,
+		"from_user": 1,
+		"status": "not_read",
+		"inclusion_date": "2018-01-01T09:00:00.0Z",
+		"message": "Adrian, eu nu te iubesc!",
+		"Id": 1,
+		"file_id": 2
+	}
+]

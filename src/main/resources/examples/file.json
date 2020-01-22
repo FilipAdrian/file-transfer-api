@@ -1,0 +1,18 @@
+{
+  "parts": {
+    "file": {
+      "headers": {
+        "Content-Disposition": {
+          "name": "file (this is default)",
+          "filename": " name of file",
+          "subtype": "form-data (this is default) "
+        },
+        "Content-Type": "file content type",
+        "Content-Transfer-Encoding": "binary (default)"
+      },
+      "content": "File Content in binary format"
+        
+          
+       }
+      }
+}

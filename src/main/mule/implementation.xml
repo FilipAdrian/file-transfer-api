@@ -94,7 +94,16 @@ output application/json
 				<ee:set-payload ><![CDATA[%dw 2.0
 output application/json
 ---
-payload]]></ee:set-payload>
+payload map ( payload01 , indexOfPayload01 ) -> {
+	chat: payload01.chat,
+	to_user: payload01.to_user,
+	from_user: payload01.from_user,
+	status: payload01.status default "",
+	inclusion_date: payload01.inclusion_date as String default "",
+	(message: payload01.message ) if (payload01.message != null),
+	Id: payload01.Id,
+	(file_id: payload01.file_id) if (payload01.file_id != null)
+}]]></ee:set-payload>
 			</ee:message>
 		</ee:transform>
 	</flow>
